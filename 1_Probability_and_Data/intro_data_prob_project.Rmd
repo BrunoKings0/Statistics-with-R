@@ -1,0 +1,193 @@
+---
+title: "Exploring the BRFSS data"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+```
+
+### Load data
+
+
+```{r load-data}
+load("brfss2013.RData")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+The Behavioral Risk Factor Surveillance System (BRFSS) is a system of health-related telephone surveys that collect state data about U.S. residents regarding their health-related risk behaviors, chronic health conditions, and use of preventive services. Established in 1984 with 15 states, BRFSS now collects data in all 50 states as well as the District of Columbia and three U.S. territories. BRFSS completes more than 400,000 adult interviews each year, making it the largest continuously conducted health survey system in the world.
+
+
+
+* * *
+
+## Part 2: Research questions
+
+**Research question 1:**
+
+What is the average of sleep in people that have difficulty concentrating/remembering and people that doesn't by sex?
+In this question we want to know if the amount of sleep is related with the difficulty in concentrating and we want to check if the amount of sleep can varies by sex.
+
+
+**Research question 2:**
+
+From the people that tried to stop smoking in the past 12 months, there are some improvement in the frequency of smooking?
+Its'a a interesting question due the fact that trying to stop smoking is a very difficult task and a lot of people try but
+can not stop and get back to old habits.
+
+
+**Research question 3:**
+
+General health of people is related to income? Does this relationship show any difference between genders? Who earn more can pay for better plans and have opportunities to improve the quality of life
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+
+**Research question 1:**
+
+first, let's examine the values of hours of sleep, sex and decide (difficulty concentrating/remembering):
+
+```{r}
+brfss2013 %>% 
+  group_by(sleptim1) %>%
+  summarise(count = n())
+```
+```{r}
+brfss2013 %>% 
+  group_by(sex) %>%
+  summarise(count = n())
+```
+
+```{r}
+brfss2013 %>% 
+  group_by(decide) %>%
+  summarise(count=n())
+```
+
+
+For the analysis, we will remove the outliers values of 103 and 450 in sleep hours, as well as the NA values of all fields.
+Making a group by decide and sex, we visualize the average of sleep for each group:
+
+
+```{r}
+brfss2013 %>% 
+  filter(!is.na(sleptim1),sleptim1 !=450, sleptim1 != 103,!is.na(decide),!is.na(sex)) %>%
+  group_by(decide, sex) %>%
+  summarise(average = mean(sleptim1), sd= sd(sleptim1))
+```
+
+For a better visualization we plot a bar char of the data:
+
+```{r}
+brfss2013 %>% 
+  filter(!is.na(sleptim1),sleptim1 !=450, sleptim1 != 103,!is.na(decide),!is.na(sex)) %>%
+  group_by(decide, sex) %>%
+  summarise(average = mean(sleptim1)) %>%
+  ggplot(aes(x=decide, y=average, fill=sex))+
+  geom_bar(stat='identity',position = "dodge")+ geom_text(aes(label=round(average,2)),position=position_dodge(width=0.9), vjust=-0.25)
+  
+```
+
+Looking to the graph, the amount of sleep in both situations is not related to sex, but there are a slightly difference 
+in the amount of sleep in people that have difficulty concentrating, but this difference contemplates the standard deviation, so 
+we can not make any relation of this two variables.
+
+
+**Research question 2:**
+
+First, let's check the possible values in the fields:
+```{r}
+brfss2013 %>% 
+  group_by(stopsmk2) %>%
+  summarise(count = n())
+
+```
+
+```{r}
+brfss2013 %>% 
+  group_by(smokday2) %>%
+  summarise(count = n())
+```
+
+
+Now, making a group by, we can see that are just two possible options for the frequency of smoking, Every day and Some days.
+
+```{r}
+brfss2013 %>% 
+  select(smokday2,stopsmk2) %>%
+  filter(!is.na(smokday2),!is.na(stopsmk2)) %>%
+  group_by(stopsmk2, smokday2) %>%
+  summarise(count = n())
+```
+
+Calculating the proportion of people that smoke every day and some days foe each group, tried to stop and that does not tried, we
+observe that the proportion of the group that had tried to stop have more people who smoke only some days other than the group of people that does not tried.
+
+```{r}
+brfss2013 %>% 
+  select(smokday2,stopsmk2) %>%
+  filter(!is.na(smokday2),!is.na(stopsmk2)) %>%
+  summarise(stop_every = sum(stopsmk2=='Yes' & smokday2=='Every day')/sum(stopsmk2=='Yes' ),
+            stop_some = sum(stopsmk2=='Yes' & smokday2=='Some days')/sum(stopsmk2=='Yes' ),
+            no_stop_every = sum(stopsmk2=='No' & smokday2=='Every day')/sum(stopsmk2=='No' ),
+            no_stop_some = sum(stopsmk2=='No' & smokday2=='Some days')/sum(stopsmk2=='No' )
+            )
+```
+
+**Research question 3:**
+
+Firts, let's check the general health and income values:
+
+```{r}
+brfss2013 %>% 
+  group_by(genhlth) %>%
+  summarise(count = n())
+```
+
+```{r}
+brfss2013 %>% 
+  group_by(income2) %>%
+  summarise(count = n())
+```
+
+To measure the average of general health, we will transform categorical data into numbers:
+
+```{r}
+brfss2013$health_num <- ifelse(brfss2013$genhlth =='Excellent',5,
+                               ifelse(brfss2013$genhlth =='Very good',4,
+                                      ifelse(brfss2013$genhlth =='Good',3,
+                                             ifelse(brfss2013$genhlth =='Fair',2,
+                                                    ifelse(brfss2013$genhlth =='Poor',1,0)))))
+```
+
+
+Plotting the average of the general health we can see that it is related to family income, and that women in general have better health than men when income is not very low.
+
+```{r}
+brfss2013 %>% 
+  filter(!is.na(income2),!is.na(health_num),!is.na(sex)) %>%
+  group_by(income2,sex) %>%
+  summarise(mean = mean(health_num)) %>%
+  ggplot(aes(x=income2, y=mean, fill=sex))+
+  geom_bar(stat='identity',position = "dodge",width = 0.7) + geom_text(aes(label=round(mean,2)),position=position_dodge(width=0.9), vjust=-0.25)+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+

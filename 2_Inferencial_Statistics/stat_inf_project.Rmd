@@ -1,0 +1,226 @@
+---
+title: "Statistical inference with the GSS data"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+```
+
+### Load data
+
+
+```{r load-data}
+load("../DataSets/gss.Rdata")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+The general social survey (GSS) has been around for more than four decades and it's a door-to-door survey asked to people in the United States.
+Every year researches visit the homes of americans and ask them a long list of questions about their history behavior and opinions on a number of topics of interest to social scientist. There are generally a few thousand people that are surveyed every year but researches would like to make general statements about the opinions and social trends of the entire United States, this process of inference from the sample to the population is possible because the researches are careful to select the respondents in such a way that their sample is representative of the population of all Americans, the result is a data set where each sampled respondent is one row and each columns is their response to a single question.
+
+The gss data set contains 57061 rows (people) and 114 columns (variables representing each question of the survey). However, many variables have missing values (NAs).
+
+For more detailed information about this data set and methodology, see the official site: http://www.gss.norc.org.
+
+
+```{r}
+dim(gss)
+```
+
+* * *
+
+## Part 2: Research question
+
+Considering the most current year of the data set (2012), is there a difference between catholic and protestant in the vehement condemnation of homosexuals?
+
+Historically Protestants have fewer restrictions than Catholics, so in theory they should be more open to homosexuality, but there is apparently an impression in the community that they reject homosexuality more. So it would be interesting to know how people think of these two main beliefs, considering that both have tha same base, the Bible.
+
+* * *
+
+## Part 3: Exploratory data analysis
+```{r}
+summary(gss$homosex)
+```
+First, let's analyze the possible responses about the sexual relations between two adults of the same sex in all religions
+
+```{r}
+table(gss$relig,gss$homosex)
+```
+We will select only people who strongly disagree and remove all null values and filter by the year 2012
+
+```{r}
+GSSData <- gss %>% filter(!(is.na(relig)) & !(is.na(homosex)) & year=='2012')
+
+GSSData %>%
+  group_by(relig) %>%
+  summarise(percentage = sum(homosex=='Always Wrong')/n())
+```
+
+
+
+```{r}
+GSSData %>%
+  group_by(relig) %>%
+  summarise(prop = mean(homosex=='Always Wrong')) %>%
+  ggplot(aes(x = reorder(relig, prop), y=prop)) +
+  geom_bar(colour="black", stat="identity")+
+  coord_flip()+
+  geom_text(aes(label = round(prop,2)), size = 3, hjust = 1.5)
+
+```
+
+Analyzing the proportion of each religion, we notice that Native Americans and Orthodox-Christian are the ones who most strongly
+disagree with homosexual relationships, we also see that the proportion of Protestants is almost double of Catholics.
+Now we need to know if this is a statistical difference.
+* * *
+
+## Part 4: Inference
+
+#Hypothesis Test
+
+Are the proportions for Protestants and Catholics who strongly disagree with homosexual relationships significantly different?
+To answer that, we built the following hypothesis test:
+
+H0: p_Protestant =  p_Catholic
+HA: p_Protestant != p_Catholic
+
+In other words, the null hypothesis says that is no difference in both proportions and de alternative hypothesis says that are.
+
+#Build dataframe
+
+We classify everything that is not "Always Wrong' as "Other', so the answer to the opinion of people have a binary value.
+```{r}
+GSSData$homosex <- ifelse(GSSData$homosex!='Always Wrong','Other','Always Wrong')
+GSSDataSub <- subset(GSSData, relig == 'Protestant' | relig =='Catholic')
+```
+
+After, we created a dataframe only with the two columns:
+
+```{r}
+Religion <- factor(GSSDataSub$relig)
+Desagree <- factor(GSSDataSub$homosex)
+
+dataframe <- data.frame(Religion = Religion,
+                 Desagree = Desagree)
+str(dataframe)
+```
+
+
+```{r}
+#Variables
+n1 <- summarise(dataframe, n1= sum(Religion == 'Protestant'))
+n2 <- summarise(dataframe, n2= sum(Religion == 'Catholic'))
+
+s1 <- summarise(dataframe, s1 =sum(Religion == 'Protestant' & Desagree == 'Always Wrong'))
+s2 <- summarise(dataframe, s2 =sum(Religion == 'Catholic' & Desagree == 'Always Wrong'))
+
+ppool     <- (s1 + s2) / (n1 + n2)  # Pooled Proportion
+cppool    <- 1-ppool               # Complement of Pooled Proportion 
+```
+
+
+#Test the conditions
+
+We need to test the conditions to assume that the distribution is nearly normal:
+
+```{r}
+# 1) Independence
+# 1.1) Within Groups:
+# 1.1.1) Sample observations must be independent within each group - ok
+# 1.1.2) If sampling without replacement,  n < 10% of the population - ok
+
+#1.2) Between Groups:
+#1.2.1)The two groups must be independent of each other (non-paired) -pk
+
+#  2) Sample Size/Skewness: Each sample should meet the success-failure condition:
+
+#Test Success Conditions:
+tsc1 <- n1*ppool   > 10 
+tfc1 <- n1*cppool  > 10
+tsc2 <- n2*ppool   > 10 
+tfc2 <- n2*cppool  > 10 
+
+c(tsc1,tfc1,tsc2,tfc2) 
+```
+Conditions are met, so we can continue.
+
+# P-Value
+```{r}
+inference(y = Desagree, x=Religion, data = dataframe,
+          statistic = "proportion",
+          type = "ht",
+          null=0,
+          alternative = "twosided",
+          method = "theoretical", 
+          success = "Always Wrong")
+```
+
+Because the p-value= 0.001 is smaller than the level of significance (.05), we reject the null hypothesus,so there is strong significant difference between the proportions of Protestants and Catholics that strongly disagree with homossexual relationship.
+
+
+We can also verify the confidence intervals, for a double check:
+
+
+#Confidence Level
+
+```{r}
+#Variables
+p1 <- summarise(dataframe, p1 =sum(Religion == 'Protestant' & Desagree == 'Always Wrong')/sum(Religion == 'Protestant'))
+p2 <- summarise(dataframe, p2 =sum(Religion == 'Catholic' & Desagree == 'Always Wrong')/sum(Religion == 'Catholic'))
+
+cpe1 <- 1-p1 # complement of point estimate 1
+cpe2 <- 1-p2 # complement of point estimate 2 
+```
+
+Check conditions:
+
+```{r}
+# 1) Independence
+# 1.1) Within Groups:
+# 1.1.1) Sample observations must be independent within each group - ok
+# 1.1.2) If sampling without replacement,  n < 10% of the population - ok
+
+#1.2) Between Groups:
+#1.2.1)The two groups must be independent of each other (non-paired) -pk
+
+#  2) Sample Size/Skewness: Each sample should meet the success-failure condition:
+
+#Test Success Conditions:
+tsc1 <- n1*p1   > 10 
+tfc1 <- n1*cpe1  > 10
+tsc2 <- n2*p2   > 10 
+tfc2 <- n2*cpe2  > 10 
+
+c(tsc1,tfc1,tsc2,tfc2) 
+```
+Conditions are met, so we can continue.
+
+```{r}
+Protestants <- subset(dataframe, Religion== "Protestant")
+Catholics <- subset(dataframe, Religion== "Catholic")
+```
+
+```{r}
+inference(y = Desagree, data = Protestants, statistic = "proportion", type = "ci", method = "theoretical",   success = "Always Wrong")
+```
+```{r}
+inference(y = Desagree, data = Catholics, statistic = "proportion", type = "ci", method = "theoretical",   success = "Always Wrong")
+
+```
+
+We can see the range of the proportion of Protestants (0.5746 , 0.6533) does not contain the range of proportion of Catholics (0.3002 , 0.4097) and vice versa, so there is a significant difference between the two religions when it comes to being strongly opposed to the homosexual relationship, confirming the result obtained previously by the method of hypothesis testing.

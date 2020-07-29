@@ -1,0 +1,191 @@
+---
+title: "Modeling and prediction for movies"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(GGally)
+```
+
+### Load data
+
+```{r load-data}
+load("../DataSets/movies.Rdata")
+```
+
+
+* * *
+
+## Part 1: Data
+
+This data set is comprised of 651 randomly sampled movies produced and released before 2016, from Rotten Tomatoes and IMDB for a random sample of movies. We have no details on how the sampling process was made to make sure that there was no bias in the random sample, but we will assume randomly sampled as stated in the data set description.
+
+Because this was an observational study and not an experiment, we cannot attribute any causal relationship, but rather generalize estimates for the entire population.
+
+* * *
+
+## Part 2: Research question
+
+What are the most influential variables in the number of votes on the imbd platform?
+
+This question is interesting to know what motivates people to vote for a film and may even be of interest to the imbd platform to understand and try to maximize the number of ratings so that each film has a representative sample of ratings.
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+first, let's check if there are null values
+
+```{r}
+sum(is.na(movies))
+```
+Removing the null values from the data set we remove 32 rows of data
+```{r}
+movies <-na.omit(movies)
+```
+
+Analyzing the number of votes, we can see that there is a great variance in the values. When observing the histogram we realize that the data is extremely right skewed.
+
+```{r}
+summary(movies$imdb_num_votes)
+```
+
+```{r}
+hist(movies$imdb_num_votes)
+```
+
+* * *
+
+## Part 4: Modeling
+
+
+To select the variables that will be part of our model, we will first plot a correlation map of the numeric variables. For better visualization we will divide into two maps
+
+```{r}
+ggpairs(movies, columns = c(14,7,8,9,10,11))
+```
+
+```{r}
+ggpairs(movies, columns = c(14,13,16,18))
+```
+
+
+We can see that in the first map the correlations are low and of all the ones that most influence the number of votes is the "thtr_rel_year" (Year the movie is released in theaters). There is also a strongly correlation with this variable with "dvd_rel_year", indicating collinearity between them, so we will only use the "thtr_rel_year" variable in this firt plot.
+
+In the second map we see that all variables have a significant correlation with the number of votes, but all also show collinearity with each other, so we will use only one of them, which in this case is the one that has the greatest relationship with the number of votes, "imdb_rating".
+
+
+From the categorical variables we will exclude of our model variables like title, director and actor names, because they present many categories and would complicate the model making and also make it very specific and with little predictive power when exposed to new names. We will also exclude variables such as launch day and urls as they are variables that do not make any sense in the influence of the number of votes.
+
+So, fitting the initial model with the 14 variables we get:
+Multiple R-squared:  0.4755 and	Adjusted R-squared:  0.4497 
+
+```{r}
+model<-lm(imdb_num_votes~genre+imdb_rating+runtime+best_pic_nom+best_pic_win+best_actor_win+best_actress_win+best_dir_win+
+          top200_box+ thtr_rel_year+critics_rating+audience_rating+mpaa_rating+title_type,data=movies)
+summary(model)
+```
+We will use the backward function to remove model features with low predictive value as a means to see if we can come up with a more simple (in terms of number of features) and more effective model.
+
+```{r}
+model_2<-step(model, direction = "backward", trace=FALSE ) 
+summary(model_2)
+```
+Applying the method we obtain a model with only 9 features, 5 less than the initial model, with pretty much
+the same R-squared and a better adjusted R-squared:
+Multiple R-squared:  0.4724,	Adjusted R-squared:  0.452 
+
+So, we can see that only 47% of the variability is explained ny our model and "best_pic_nom" and "best_pic" (Whether or not the movie was nominated for a best picture Oscar, or win a Odscar) are the most significant variables. Documentary and Musical & Performing Arts  Genre has a strong negative relationship with the reference variable, while Science Fiction & Fantasy genere has a strong positive relationship with the reference variable.
+
+Parameter estimates should only be trusted if the conditions for the regression are reasonable:
+
+# residual plot against each predictor variable
+```{r}
+# residual plot against imdb_rating
+plot(model_2$residuals ~ movies$imdb_rating)
+abline(h = 0, lty = 4)  # adds a horizontal dashed line at y = 0
+```
+
+We want our residuals to be randomly scattered around zero, looking in the plot we see that this condition 
+does not appear to be satisfied at the extremities of the graph, but maybe could be due have few points.
+
+```{r}
+# residual plot against runtime
+plot(model_2$residuals ~ movies$runtime)
+abline(h = 0, lty = 4)  # adds a horizontal dashed line at y = 0
+```
+
+This chart seems to have the residuals randomly scattered around zero.
+
+```{r}
+# residual plot against thtr_rel_year
+plot(model_2$residuals ~ movies$thtr_rel_year)
+abline(h = 0, lty = 4)  # adds a horizontal dashed line at y = 0
+```
+
+This chart seems to have the residuals randomly scattered around zero.
+
+#Nearly normal residuals with mean 0
+
+```{r}
+hist(model_2$residuals)
+qqnorm(model_2$residuals)
+qqline(model_2$residuals)
+```
+
+Looking at the histogram we have a little skew in the residuals plot. Looking at the normal probability plot we see a huge deviation from the mean in the tails area. So i would say that
+this condition is poorly satisfied.
+
+#Constant variability of results
+
+```{r}
+plot(model_2$residuals~model_2$fitted)
+plot(abs(model_2$residuals)~model_2$fitted)
+```
+
+We see a fan shape in this plot, so the variability of residuals does not stay constant as the value of the fitted or the predicted value change, so this condition is not met.
+
+As conditions have not been met, we cannot say that our multiple regression model is going to be valid, so we could stop here,
+but we’ll proceed with the prediction step assuming it’s.
+
+* * *
+
+## Part 5: Prediction
+
+Now we could test our model to predict the number of votes in a movie.
+
+First, we need to create a new data frame for this movie:
+```{r new-prof}
+newmovie <- data.frame(genre = "Drama", imdb_rating = 5.4, runtime=110, best_pic_nom="no",best_pic_win="no",top200_box="no",
+                 thtr_rel_year=2001, critics_rating="Rotten", mpaa_rating="PG" )
+```
+
+
+Then, we do the prediction using the `predict` function:
+```{r new-prof-predict}
+predict(model_2, newmovie)
+```
+```{r}
+predict(model_2, newmovie, interval = "prediction", level = 0.95)
+```
+We would get with 95% confidence, that the number of votes on imdb plattaform on average for this movie would be 
+expected to be between 0 and  168222, Whereas there are no negative votes. It's a big interval, so it's not so informative.
+
+* * *
+
+## Part 6: Conclusion
+
+
+we conclude that this model cannot be used for prediction because it does not meet the necessary conditions. Even considering it valid, it presents a low value of R-squared and little predictive power.
+But it is interesting to note that a model that initially with 14 features can be reduced to one with just 9 with better efficiency.

@@ -197,7 +197,7 @@ To make prediciton, we would use tha same dataset to test if the model was fit c
 BMA <- predict(modelBIC, movies_new, estimator = "BMA", se.fit = TRUE)
 ci_bma <- confint(BMA, estimator = "BMA")
 opt_bma <- which.max(BMA$fit)
-ci_bma[opt_bma, ]0
+ci_bma[opt_bma, ]
 ```
 
 A model with 99,5% of predicion 

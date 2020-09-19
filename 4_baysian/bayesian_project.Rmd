@@ -1,0 +1,208 @@
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(BAS)
+library(GGally)
+library(MASS)
+library(pander)
+```
+
+### Load data
+
+
+```{r load-data}
+load("movies.Rdata")
+```
+
+
+* * *
+
+## Part 1: Data
+
+
+This data set is comprised of 651 randomly sampled movies produced and released before 2016, from Rotten Tomatoes and IMDB for a random sample of movies. We have no details on how the sampling process was made to make sure that there was no bias in the random sample, but we will assume randomly sampled as stated in the data set description.
+
+Because this was an observational study and not an experiment, we cannot attribute any causal relationship, but rather generalize estimates for the entire population.
+
+* * *
+
+## Part 2: Data manipulation
+
+```{r}
+movies %>% summary()
+```
+
+Fist, let's remove the N/A values:
+
+```{r}
+movies_complete <- na.omit(movies)
+```
+
+Now, let's create new variables:
+
+```{r}
+movies_new <- movies_complete %>%
+  mutate(feature_film = if_else(title_type=="Feature Film","yes","no")) %>%
+  mutate(drama = if_else(genre=="Drama","yes","no")) %>%
+  mutate(mpaa_rating_R = if_else(mpaa_rating=="R","yes","no")) %>%
+  mutate(oscar_season = if_else(is.element(thtr_rel_month,c(10,11,12)),"yes","no")) %>%
+  mutate(summer_season = if_else(is.element(thtr_rel_month,c(5,6,7,8)),"yes","no"))
+```
+
+and after let's store this categorical data as integers
+
+```{r}
+
+movies_new$feature_film = factor(movies_new$feature_film, levels = c("yes", "no"))
+movies_new$drama = factor(movies_new$drama, levels = c("yes", "no"))
+movies_new$mpaa_rating_R = factor(movies_new$mpaa_rating_R, levels = c("yes", "no"))
+movies_new$oscar_season = factor(movies_new$oscar_season, levels = c("yes", "no"))
+movies_new$summer_season = factor(movies_new$summer_season, levels = c("yes", "no"))
+```
+  
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+Let's analyze te relationship between the new variables and the response variable:
+
+1 - Feature film and audience score
+
+```{r}
+movies_new %>%
+  group_by(feature_film) %>%
+  summarize(mean=mean(audience_score), sd=sd(audience_score),median=median(audience_score),IQR=IQR(audience_score),min=min(audience_score),max=max(audience_score), count=n())
+```
+
+
+2- Drama and audience score
+
+```{r}
+movies_new %>%
+  group_by(drama) %>%
+  summarize(mean=mean(audience_score), sd=sd(audience_score),median=median(audience_score),IQR=IQR(audience_score),min=min(audience_score),max=max(audience_score), count=n())
+```
+
+3- MPAA R Rating and audience score
+
+```{r}
+movies_new %>%
+  group_by(mpaa_rating_R) %>%
+  summarize(mean=mean(audience_score), sd=sd(audience_score),median=median(audience_score),IQR=IQR(audience_score),min=min(audience_score),max=max(audience_score), count=n())
+```
+
+
+4- Oscar season and audience score
+
+```{r}
+movies_new %>%
+  group_by(oscar_season) %>%
+  summarize(mean=mean(audience_score), sd=sd(audience_score),median=median(audience_score),IQR=IQR(audience_score),min=min(audience_score),max=max(audience_score), count=n())
+```
+
+
+5- Summer season and audience score
+
+```{r}
+movies_new %>%
+  group_by(summer_season) %>%
+  summarize(mean=mean(audience_score), sd=sd(audience_score),median=median(audience_score),IQR=IQR(audience_score),min=min(audience_score),max=max(audience_score), count=n())
+```
+
+We observe a significant difference in the mean and median of Feature film and Drama, but we will consider all ou this categorical variables in our model.
+
+The numeric variavles chosen was: runtime, thtr_rel_year,imdb_num_votes,imdb_rating,critics_score
+Let's analyze their correlations:
+
+```{r}
+ggpairs(dplyr::select(movies_new,audience_score,runtime, thtr_rel_year,imdb_num_votes,imdb_rating,critics_score),title = "Pairwise relationships among numeric explanatory variables")
+```
+
+We can see that critics_score and imdb_rating are highly correlated (0.762), as imdb_rating have a higher correlation (0.861) with audience_score when compared with critics_score (0.702), would be intereting keep it in the model and remove critics_score.
+
+* * *
+
+## Part 4: Modeling
+
+let's fit the model using the BIC:
+
+```{r}
+modelBIC <- bas.lm(audience_score ~ 
+                     imdb_rating +  critics_score + runtime + imdb_num_votes +
+                     feature_film + drama  + mpaa_rating_R + thtr_rel_year +
+                     oscar_season + summer_season  +
+                     best_pic_nom + best_pic_win + best_actor_win +
+                     best_actress_win + best_dir_win + top200_box
+                   , data = movies_new,
+                   prior = "BIC",
+                   modelprior = uniform())
+summary(modelBIC)
+```
+
+We observe that imdb_rating, critics_score and runtime have posterior probabilities greater than 0.5 with mdb_rating, critics_score appering in all of the best models.
+
+```{r}
+image(modelBIC)
+```
+
+
+Analysing the linearity of this variables, we can see that all out them are clearly linear with audience_score except for runtime that have a difficult distribuiton to interpret
+
+```{r}
+p1 <- ggplot(data = movies, aes(x = imdb_rating, y = audience_score)) +
+  geom_point() +
+  stat_smooth(method = "lm", se = FALSE)
+p1
+p2 <- ggplot(data = movies, aes(x = critics_score, y = audience_score)) +
+  geom_point() +
+  stat_smooth(method = "lm", se = FALSE)
+p2
+p3 <- ggplot(data = movies, aes(x = runtime, y = audience_score)) +
+  geom_point() +
+  stat_smooth(method = "lm", se = FALSE)
+p3
+
+```
+
+```{r}
+coef <- coefficients(modelBIC)
+confint(coef)
+```
+
+
+So we can interpret this model as:
+
+For each additional point of imdb_rating, there is a 95% chance that average audience_score will increase by 1.353151e+01 to 1.650667e+01
+
+
+For each additional point of critics_score, there is a 95% chance that average audience_score will increase by 0.000000e+00 to 1.123003e-01
+
+
+For each additional minute in runtime, there is a 95% chance that average audience_score will decrease by -9.069889e-02 to 0.000000e+00
+
+
+* * *
+
+## Part 5: Prediction
+
+To make prediciton, we would use tha same dataset to test if the model was fit correctly
+
+```{r}
+BMA <- predict(modelBIC, movies_new, estimator = "BMA", se.fit = TRUE)
+ci_bma <- confint(BMA, estimator = "BMA")
+opt_bma <- which.max(BMA$fit)
+ci_bma[opt_bma, ]0
+```
+
+A model with 99,5% of predicion 
+* * *
+
+## Part 6: Conclusion
+
+We conclude that from all of that variables in the entire dataset, with BIC method, we can create a grat model with just 3 significant variables. ITo confirm the accuracy of this model it's necessary to test with a new dataset and evaluate if it's works better to new data when compared to other models.
